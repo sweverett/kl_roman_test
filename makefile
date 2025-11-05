@@ -12,6 +12,8 @@ GENERATE_CONDA_LOCK = cd "$(shell dirname "$(1)")"; conda-lock -f "$(shell basen
 UNIT_TEST_FILES = 
 # UNIT_TEST_FILES = .../unit_test_file1 .../unit_test_file2
 
+FORMATTER = ./scripts/black-formatting.sh
+
 .PHONY: install
 install:
 	@echo "Installing kl_roman_test repository..."
@@ -33,6 +35,16 @@ test-data: $(UNIT_TEST_FILES)
 conda-lock.yml:
 	@echo "Regenerating $@..."
 	@$(call GENERATE_CONDA_LOCK,$@,environment.yaml)
+
+# Format code
+.PHONY: format
+format:
+	@$(FORMATTER)
+
+# Check the format of the code; **does not reformat the code**
+.PHONY: check-format
+check-format:
+	@$(FORMATTER) --check
 
 #-------------------------------------------------------------------------------
 # NOTE: These may be useful in the future if we use git submodules

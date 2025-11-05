@@ -1,0 +1,136 @@
+name: Roman KL Test PR Checks
+
+on:
+  pull_request:
+    branches:
+      # we only run CI on branches that want to merge into main, for now
+      - main  
+    types:
+      # we want to only run CI on PRs that are "Ready for review", not drafts
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  test:
+    # skip draft PRs
+    if: github.event.pull_request.draft == false
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: [3.12]
+        # os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
+
+    steps:
+    # NOTE: This is not needed currently for this repo, but we can turn it back 
+    # on if it is useful in the future
+    # - name: Disk space cleaning
+    #   # This is modeled after https://github.com/easimon/maximize-build-space/blob/master/action.yml
+    #   run: |
+    #     echo "=== df -h"
+    #     df -h
+    #     echo "=== swapon"
+    #     swapon --show
+    #     echo "=== memory free -h"
+    #     free -h
+
+    #     echo "=== Removing dotnet ..."
+    #     sudo rm -rf /usr/share/dotnet
+    #     echo "=== Removing android ..."
+    #     sudo rm -rf /usr/local/lib/android
+    #     echo "=== Removing Haskell ..."
+    #     sudo rm -rf /opt/ghc
+    #     echo "=== Removing CodeQL ..."
+    #     sudo rm -rf /opt/hostedtoolcache/CodeQL
+    #     echo "=== Removing dockers ..."
+    #     sudo docker image prune --all --force
+
+    #     echo "=== df -h"
+    #     df -h
+    #     echo "=== swapon"
+    #     swapon --show
+    #     echo "=== memory free -h"
+    #     free -h
+
+    - name: Check out the repository
+      uses: actions/checkout@v4
+      with:
+        # NOTE: turn back on if we need a secret PAT
+        #token: ${{ secrets.GH_PAT }}    # Use repo PAT for authentication
+        submodules: true                # Initialize and update submodules
+        fetch-depth: 0                  # Fetch all history
+
+    - name: Install Miniforge
+      run: |
+        if [ "${RUNNER_OS}" == "Linux" ]; then
+          wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O miniforge.sh
+        else
+          wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh -O miniforge.sh
+        fi
+        bash miniforge.sh -b -p $HOME/miniforge3
+        source $HOME/miniforge3/etc/profile.d/conda.sh
+        conda config --set always_yes yes --set changeps1 no
+        conda install -n base conda-lock
+        conda update -q conda
+        conda config --set remote_connect_timeout_secs 60
+        conda config --set remote_read_timeout_secs 120
+        conda config --set remote_max_retries 10
+
+    - name: Inject Git Secret PAT Into github URLs
+      env:
+        GIT_TOKEN: ${{secrets.GH_PAT}}
+      run: |
+        git config --global credential.helper store
+        echo "https://PST-machine-user:${GIT_TOKEN}@github.com" > ~/.git-credentials
+        #git config --global url."https://${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+      shell: bash
+
+    # NOTE: we can do something similar to rigel for a UA remote server, if we wish
+    #- name: Install rigel SSH key to ssh-agent
+    #  uses: webfactory/ssh-agent@v0.7.0
+    #  with:
+    #    ssh-private-key: ${{secrets.RIGEL_KEY}}
+
+    - name: Install kltest environment
+      run: |
+        source $HOME/miniforge3/etc/profile.d/conda.sh
+        conda activate base
+        make install
+      shell: bash
+
+    # Run the formatter checker (required for a merge into main), but don't
+    # block the prevoius steps like tests & environment setup
+    - name: Run Format Checker
+      run: |
+        source $HOME/miniforge3/etc/profile.d/conda.sh
+        conda activate kltest
+        make check-format
+      # set to true if you want to continue even if the format is not correct
+      continue-on-error: false
+
+    - name: Run Tests
+      # Set a non interactive backend for matplotlib to avoid display issues
+      run: |
+        source $HOME/miniforge3/etc/profile.d/conda.sh
+        conda activate kltest
+        export MPLBACKEND=Agg
+        make test
+      shell: bash
+
+    - name: Upload Test Logs as Artifacts
+      # Upload test logs only if tests pass
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kl-roman-test-logfiles
+        path: |
+          tests/out/**/*.log
+    - name: Upload Test Results as Artifacts
+      # Upload full tests out dir only if a test fails
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-outputs
+        path: tests/out  # Adjust this path to where your test results are saved
