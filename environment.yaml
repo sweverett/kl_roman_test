@@ -1,4 +1,4 @@
-name: kltest
+name: klpipe
 channels:
   - conda-forge
 dependencies:

@@ -83,16 +83,10 @@ test-verbose:
 	pytest tests/ -v -s
 
 .PHONY: test-clean
-clean:
-	rm -rf build/ dist/ *.egg-info
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-
-.PHONY: test-clean-test
 clean-test:
 	rm -rf tests/out/
-	rm -rf .pytest_cache/
-	rm -rf htmlcov/
+	#rm -rf .pytest_cache/
+	#rm -rf htmlcov/
 	rm -rf .coverage
 
 #-------------------------------------------------------------------------------
