@@ -1,2 +1,6 @@
+kl_pipe/__pycache__/*
 data/*
 tests/__pycache__/*
+tests/out/*
+.vscode/*
+

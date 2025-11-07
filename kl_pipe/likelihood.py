@@ -3,15 +3,13 @@ import jax.numpy as jnp
 
 from kl_pipe.model import KLModel
 
+
 def log_likelihood(
-    theta: jnp.ndarray,
-    kl_model: KLModel,
-    datavector: jnp.ndarray,
-    meta_params: dict
+    theta: jnp.ndarray, kl_model: KLModel, datavector: jnp.ndarray, meta_params: dict
 ) -> float:
     """
     Compute log-likelihood for kinematic lensing model.
-    
+
     Parameters
     ----------
     theta : jnp.ndarray
@@ -22,7 +20,7 @@ def log_likelihood(
         Observed data vector.
     meta_params : dict
         Fixed metadata including coordinate grids.
-        
+
     Returns
     -------
     float
@@ -30,15 +28,12 @@ def log_likelihood(
     """
 
     velocity_map, intensity_map = kl_model(
-        theta,
-        plane='obs',
-        X=meta_params['X'],
-        Y=meta_params['Y']
+        theta, plane='obs', X=meta_params['X'], Y=meta_params['Y']
     )
-    
+
     model_prediction = velocity_map * intensity_map
-    
+
     residuals = datavector - model_prediction
     chi2 = jnp.sum(residuals**2)
-    
+
     return -0.5 * chi2

@@ -2,6 +2,7 @@ name: kltest
 channels:
   - conda-forge
 dependencies:
+  - pytest
   - astropy
   - corner
   - emcee

@@ -29,17 +29,6 @@ install:
 	@bash install.sh
 	@echo "kl_roman_test environment installed."
 
-
-# Run tests
-.PHONY: test
-test: test-data
-	@echo "Running tests..."
-	@conda run -n kltest python -m unittest discover -s $(TEST_DIR) -p "test_*.py"
-
-# Download or generate test data
-.PHONY: test-data
-test-data: $(UNIT_TEST_FILES)
-
 # Regenerate the conda-lock.yml file
 conda-lock.yml:
 	@echo "Regenerating $@..."
@@ -68,6 +57,43 @@ download-tng50:
 	@echo "NOTE: For now, please manually download the TNG50 data files from the provided SharePoint link."
 	@echo "URL: $(TNG50_DRIVE_URL)"
 	@echo "Destination: $(TNG50_DATA_DIR)"
+
+#-------------------------------------------------------------------------------
+# test related targets
+
+# Download or generate test data
+.PHONY: test-data
+test-data: $(UNIT_TEST_FILES)
+
+
+.PHONY: test
+test:
+	pytest tests/ -v
+
+.PHONY: test-coverage
+test-coverage:
+	pytest tests/ -v --cov=kl_pipe --cov-report=html --cov-report=term-missing
+
+.PHONY: test-fast
+test-fast:
+	pytest tests/ -v -x
+
+.PHONY: test-verbose
+test-verbose:
+	pytest tests/ -v -s
+
+.PHONY: test-clean
+clean:
+	rm -rf build/ dist/ *.egg-info
+	find . -type d -name __pycache__ -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
+
+.PHONY: test-clean-test
+clean-test:
+	rm -rf tests/out/
+	rm -rf .pytest_cache/
+	rm -rf htmlcov/
+	rm -rf .coverage
 
 #-------------------------------------------------------------------------------
 # NOTE: These may be useful in the future if we use git submodules

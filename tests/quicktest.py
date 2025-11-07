@@ -22,7 +22,9 @@ print(f"Total parameters: {len(kl_model.PARAMETER_NAMES)}")
 # Create synthetic data
 theta_true = jnp.array([100.0, 200.0, 5.0, 0.8, 45.0, 0.0, 0.0, 0.0, 0.0, 1.0, 3.0])
 vel_map, int_map = kl_model(theta_true, 'obs', X, Y)
-data = vel_map * int_map + jax.random.normal(jax.random.PRNGKey(42), vel_map.shape) * 0.1
+data = (
+    vel_map * int_map + jax.random.normal(jax.random.PRNGKey(42), vel_map.shape) * 0.1
+)
 
 # Evaluate likelihood
 log_like = log_likelihood(theta_true, kl_model, data, meta)

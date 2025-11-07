@@ -4,7 +4,7 @@ from warnings import warn
 import astropy.units as units
 from astropy.wcs import WCS
 
-import kl_tools.utils as utils
+import kl_pipe.utils as utils
 
 '''
 This file defines the structure and conversions between a params dict

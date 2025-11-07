@@ -7,10 +7,12 @@ from typing import Tuple, Set, Dict
 
 from kl_pipe.transformation import transform_to_disk_plane
 
+
 class Model(ABC):
     """
     Base class for all models (velocity, intensity, etc.)
     """
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Only enforce PARAMETER_NAMES for concrete classes
@@ -18,29 +20,29 @@ class Model(ABC):
             if not hasattr(cls, 'PARAMETER_NAMES') or cls.PARAMETER_NAMES is None:
                 raise TypeError(
                     f"{cls.__name__} must define PARAMETER_NAMES class variable"
-                    )
+                )
 
         return
-    
+
     def __init__(self, meta_pars=None) -> None:
         self.meta_pars = meta_pars or {}
         self._param_indices = {name: i for i, name in enumerate(self.PARAMETER_NAMES)}
 
         return
-    
+
     def get_param(self, name: str, theta: jnp.ndarray) -> float:
         idx = self._param_indices[name]
 
         return theta[idx]
-    
+
     @classmethod
     def theta2pars(cls, theta: jnp.ndarray) -> dict:
-         return {name: float(theta[i]) for i, name in enumerate(cls.PARAMETER_NAMES)}
-    
+        return {name: float(theta[i]) for i, name in enumerate(cls.PARAMETER_NAMES)}
+
     @classmethod
     def pars2theta(cls, pars: dict) -> jnp.ndarray:
         return jnp.array([pars[name] for name in cls.PARAMETER_NAMES])
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -53,25 +55,23 @@ class Model(ABC):
         plane: str,
         X: jnp.ndarray,
         Y: jnp.ndarray,
-        Z: jnp.ndarray = None
+        Z: jnp.ndarray = None,
     ) -> jnp.ndarray:
         """
         Evaluate the model at specified coordinates in a given plane.
         """
-        raise NotImplementedError(
-            "Subclasses must implement __call__ method."
-        )
+        raise NotImplementedError("Subclasses must implement __call__ method.")
 
 
 class VelocityModel(Model):
     """
     Base class for velocity models (vector fields projected to line-of-sight).
-    
+
     Velocity models require special handling because they represent vector fields
     that must be projected along the line of sight. The projection depends on
     the viewing geometry (inclination and azimuthal angle).
     """
-    
+
     def __call__(
         self,
         theta: jnp.ndarray,
@@ -82,14 +82,14 @@ class VelocityModel(Model):
     ) -> jnp.ndarray:
         """
         Evaluate line-of-sight velocity at coordinates in the specified plane.
-        
+
         The velocity is computed as:
         1. Transform coordinates to disk plane
         2. Evaluate 3D velocity field in disk plane
         3. Project to line-of-sight based on viewing geometry
         4. Add systemic velocity
         """
-        
+
         # extract transformation parameters
         x0 = self.get_param('vel_x0', theta)
         y0 = self.get_param('vel_y0', theta)
@@ -100,38 +100,34 @@ class VelocityModel(Model):
 
         # plus extras
         v0 = self.get_param('v0', theta)
-        
+
         # Transform to disk plane
         x_disk, y_disk = transform_to_disk_plane(
             x, y, plane, x0, y0, g1, g2, theta_int, sini
         )
-        
+
         # evaluate circular velocity (speed) in disk plane
         v_circ = self.evaluate_circular_velocity(theta, x_disk, y_disk, z)
-        
+
         # project to line-of-sight
         # For circular rotation: v_los = v_circ * sin(i) * cos(phi)
         # where phi is azimuthal angle in disk plane
         phi = jnp.arctan2(y_disk, x_disk)
         v_los = sini * jnp.cos(phi) * v_circ
-        
+
         # finally, add systemic velocity
         return v0 + v_los
-    
+
     @abstractmethod
     def evaluate_circular_velocity(
-        self,
-        theta: jnp.ndarray,
-        X: jnp.ndarray,
-        Y: jnp.ndarray,
-        Z: jnp.ndarray = None
+        self, theta: jnp.ndarray, X: jnp.ndarray, Y: jnp.ndarray, Z: jnp.ndarray = None
     ) -> jnp.ndarray:
         """
         Evaluate circular velocity (speed) in disk plane.
-        
+
         This is the magnitude of the circular velocity at each point,
         before projection to line-of-sight.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
@@ -140,7 +136,7 @@ class VelocityModel(Model):
             Coordinates in disk plane.
         Z : jnp.ndarray, optional
             Z-coordinates.
-            
+
         Returns
         -------
         jnp.ndarray
@@ -154,12 +150,12 @@ class VelocityModel(Model):
 class IntensityModel(Model):
     """
     Base class for intensity models (scalar fields).
-    
+
     Intensity models are evaluated in the disk plane and transformed through
     coordinate systems, but the intensity value itself doesn't change with
     projection
     """
-    
+
     def __call__(
         self,
         theta: jnp.ndarray,
@@ -171,7 +167,7 @@ class IntensityModel(Model):
         """
         Evaluate intensity at coordinates in the specified plane.
         """
-        
+
         # extract transformation parameters
         x0 = self.get_param('int_x0', theta)
         y0 = self.get_param('int_y0', theta)
@@ -179,22 +175,18 @@ class IntensityModel(Model):
         g2 = self.get_param('g2', theta)
         theta_int = self.get_param('theta_int', theta)
         sini = self.get_param('sini', theta)
-        
+
         # transform to disk plane
         x_disk, y_disk = transform_to_disk_plane(
             x, y, plane, x0, y0, g1, g2, theta_int, sini
         )
-        
+
         # evaluate in disk plane
         return self.evaluate_in_disk_plane(theta, x_disk, y_disk, z)
-    
+
     @abstractmethod
     def evaluate_in_disk_plane(
-        self,
-        theta: jnp.ndarray,
-        X: jnp.ndarray,
-        Y: jnp.ndarray,
-        Z: jnp.ndarray = None
+        self, theta: jnp.ndarray, X: jnp.ndarray, Y: jnp.ndarray, Z: jnp.ndarray = None
     ) -> jnp.ndarray:
         """
         Evaluate intensity in disk plane (face-on)
@@ -203,14 +195,15 @@ class IntensityModel(Model):
             "Subclasses must implement evaluate_in_disk_plane method."
         )
 
+
 class KLModel(object):
     """
     Kinematic lensing model combining velocity and intensity components.
-    
+
     Handles parameter management for models with shared and independent parameters.
     Builds a unified parameter space and provides slicing to extract sub-arrays
     for each component model.
-    
+
     Parameters
     ----------
     velocity_model : VelocityModel
@@ -223,7 +216,7 @@ class KLModel(object):
         composite parameter array. Default is None (no shared parameters).
     meta_pars : dict, optional
         Fixed metadata for both models.
-        
+
     Attributes
     ----------
     PARAMETER_NAMES : tuple
@@ -232,16 +225,16 @@ class KLModel(object):
         Indices to extract velocity parameters from composite theta.
     intensity_slice : slice or array
         Indices to extract intensity parameters from composite theta.
-        
+
     Examples
     --------
     >>> # Models with independent parameters
-    >>> vel_model = OffsetVelocityModel(meta)  # params: v0, vcirc, x0, y0
+    >>> vel_model = OffsetVelocityModel(meta)  # params: v0, vcirc, vel_x0, ve_y0
     >>> int_model = ExponentialIntensity(meta)  # params: I0, scale
     >>> kl_model = KLModel(vel_model, int_model)
     >>> kl_model.PARAMETER_NAMES
-    ('v0', 'vcirc', 'x0', 'y0', 'I0', 'scale')
-    >>> 
+    ('v0', 'vcirc', 'vel_x0', 'vel_y0', 'I0', 'scale')
+    >>>
     >>> # Models with shared parameters
     >>> vel_model = OffsetVelocityModel(meta_pars)  # params: v0, vcirc, x0, y0
     >>> int_model = OffsetIntensity(meta_pars)      # params: I0, x0, y0
@@ -249,74 +242,72 @@ class KLModel(object):
     >>> kl_model.PARAMETER_NAMES
     ('v0', 'vcirc', 'x0', 'y0', 'I0')
     """
-    
+
     def __init__(
         self,
         velocity_model: VelocityModel,
         intensity_model: IntensityModel,
         shared_pars: Set[str] = None,
-        meta_pars: dict = None
+        meta_pars: dict = None,
     ):
         self.velocity_model = velocity_model
         self.intensity_model = intensity_model
         self.shared_pars = shared_pars or set()
         self.meta_pars = meta_pars or {}
-        
+
         self._build_parameter_structure()
 
         return
-    
+
     def _build_parameter_structure(self):
         """
         Build the unified parameter space and component slicing indices.
-        
+
         Creates PARAMETER_NAMES with shared parameters appearing once, and builds
         index mappings for extracting component-specific parameter arrays.
         """
 
         vel_pars = self.velocity_model.PARAMETER_NAMES
         int_pars = self.intensity_model.PARAMETER_NAMES
-        
+
         vel_pars_set = set(vel_pars)
         int_pars_set = set(int_pars)
-        
+
         if not self.shared_pars.issubset(vel_pars_set & int_pars_set):
             invalid = self.shared_pars - (vel_pars_set & int_pars_set)
-            raise ValueError(
-                f"Shared parameters {invalid} not present in both models"
-            )
-        
+            raise ValueError(f"Shared parameters {invalid} not present in both models")
+
         param_list = list(vel_pars)
         for param in int_pars:
             if param not in self.shared_pars:
                 param_list.append(param)
-        
+
         self.PARAMETER_NAMES = tuple(param_list)
-        
+
         composite_param_dict = {name: i for i, name in enumerate(self.PARAMETER_NAMES)}
-        
-        self._velocity_indices = jnp.array([
-            composite_param_dict[name] for name in vel_pars
-        ])
-        self._intensity_indices = jnp.array([
-            composite_param_dict[name] for name in int_pars
-        ])
-        
+
+        self._velocity_indices = jnp.array(
+            [composite_param_dict[name] for name in vel_pars]
+        )
+        self._intensity_indices = jnp.array(
+            [composite_param_dict[name] for name in int_pars]
+        )
+
         self._param_indices = composite_param_dict
 
         return
-    
+
     def get_param(self, name: str, theta: jnp.ndarray):
         """
         Extract a parameter value by name from the composite parameter array.
-        
+
         Parameters
         ----------
         name : str
             Parameter name (must be in PARAMETER_NAMES).
         theta : jnp.ndarray
             Composite parameter array.
-            
+
         Returns
         -------
         scalar or jnp.ndarray
@@ -325,50 +316,50 @@ class KLModel(object):
         idx = self._param_indices[name]
 
         return theta[idx]
-    
+
     def get_velocity_pars(self, theta: jnp.ndarray) -> jnp.ndarray:
         """
         Get velocity model parameters from composite array.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
             Composite parameter array.
-            
+
         Returns
         -------
         jnp.ndarray
             Parameter array for velocity model.
         """
         return theta[self._velocity_indices]
-    
+
     def get_intensity_pars(self, theta: jnp.ndarray) -> jnp.ndarray:
         """
         Get intensity model parameters from composite array.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
             Composite parameter array.
-            
+
         Returns
         -------
         jnp.ndarray
             Parameter array for intensity model.
         """
         return theta[self._intensity_indices]
-    
+
     def evaluate_velocity(
         self,
         theta: jnp.ndarray,
         plane: str,
         X: jnp.ndarray,
         Y: jnp.ndarray,
-        Z: jnp.ndarray = None
+        Z: jnp.ndarray = None,
     ) -> jnp.ndarray:
         """
         Evaluate velocity model component.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
@@ -379,7 +370,7 @@ class KLModel(object):
             Coordinate arrays.
         Z : jnp.ndarray, optional
             Z-coordinate array.
-            
+
         Returns
         -------
         jnp.ndarray
@@ -388,18 +379,18 @@ class KLModel(object):
         theta_vel = self.get_velocity_pars(theta)
 
         return self.velocity_model(theta_vel, plane, X, Y, Z)
-    
+
     def evaluate_intensity(
         self,
         theta: jnp.ndarray,
         plane: str,
         X: jnp.ndarray,
         Y: jnp.ndarray,
-        Z: jnp.ndarray = None
+        Z: jnp.ndarray = None,
     ) -> jnp.ndarray:
         """
         Evaluate intensity model component.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
@@ -410,7 +401,7 @@ class KLModel(object):
             Coordinate arrays.
         Z : jnp.ndarray, optional
             Z-coordinate array.
-            
+
         Returns
         -------
         jnp.ndarray
@@ -419,18 +410,18 @@ class KLModel(object):
         theta_int = self.get_intensity_pars(theta)
 
         return self.intensity_model(theta_int, plane, X, Y, Z)
-    
+
     def __call__(
         self,
         theta: jnp.ndarray,
         plane: str,
         X: jnp.ndarray,
         Y: jnp.ndarray,
-        Z: jnp.ndarray = None
+        Z: jnp.ndarray = None,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Evaluate both model components.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
@@ -441,7 +432,7 @@ class KLModel(object):
             Coordinate arrays.
         Z : jnp.ndarray, optional
             Z-coordinate array.
-            
+
         Returns
         -------
         velocity_map : jnp.ndarray
@@ -458,12 +449,12 @@ class KLModel(object):
     def theta2pars(self, theta: jnp.ndarray) -> dict:
         """
         Convert parameter array to dictionary.
-        
+
         Parameters
         ----------
         theta : jnp.ndarray
             Composite parameter array.
-            
+
         Returns
         -------
         dict
@@ -471,16 +462,16 @@ class KLModel(object):
         """
 
         return {name: float(theta[i]) for i, name in enumerate(self.PARAM_NAMES)}
-    
+
     def pars2theta(self, pars: dict) -> jnp.ndarray:
         """
         Convert parameter dictionary to array.
-        
+
         Parameters
         ----------
         pars : dict
             Dictionary with keys matching self.PARAM_NAMES.
-            
+
         Returns
         -------
         jnp.ndarray
