@@ -68,19 +68,19 @@ test-data: $(UNIT_TEST_FILES)
 
 .PHONY: test
 test:
-	pytest tests/ -v
+	@conda run -n klpipe pytest tests/ -v
 
 .PHONY: test-coverage
 test-coverage:
-	pytest tests/ -v --cov=kl_pipe --cov-report=html --cov-report=term-missing
+	@conda run -n klpipe pytest tests/ -v --cov=kl_pipe --cov-report=html --cov-report=term-missing
 
 .PHONY: test-fast
 test-fast:
-	pytest tests/ -v -x
+	@conda run -n klpipe && pytest tests/ -v -x
 
 .PHONY: test-verbose
 test-verbose:
-	pytest tests/ -v -s
+	@conda run -n klpipe && pytest tests/ -v -s
 
 .PHONY: test-clean
 clean-test:
