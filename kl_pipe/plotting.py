@@ -96,7 +96,8 @@ def plot_velocity_map(
     fig, ax
         Matplotlib figure and axis objects.
     """
-    # Create ImagePars if not provided
+
+    # create ImagePars if not provided
     if image_pars is None:
         if rmax is None:
             rscale = model.get_param('rscale', theta)
@@ -104,33 +105,13 @@ def plot_velocity_map(
 
         image_pars = create_default_image_pars(rmax, Ngrid)
 
-    # Get coordinate grids in arcsec
+    # get coordinate grids in arcsec
     X, Y = build_map_grid_from_image_pars(image_pars, unit='arcsec', centered=True)
 
-    # Evaluate model
-    if speed:
-        # For speed, evaluate circular velocity directly
-        from kl_pipe.transformation import transform_to_disk_plane
+    # evaluate model
+    V = model(theta, plane, X, Y, return_speed=speed)
 
-        x0 = model.get_param('x0', theta) if 'x0' in model._param_indices else 0.0
-        y0 = model.get_param('y0', theta) if 'y0' in model._param_indices else 0.0
-        g1 = model.get_param('g1', theta) if 'g1' in model._param_indices else 0.0
-        g2 = model.get_param('g2', theta) if 'g2' in model._param_indices else 0.0
-        theta_int = (
-            model.get_param('theta_int', theta)
-            if 'theta_int' in model._param_indices
-            else 0.0
-        )
-        sini = model.get_param('sini', theta) if 'sini' in model._param_indices else 0.0
-
-        X_disk, Y_disk = transform_to_disk_plane(
-            plane, x0, y0, g1, g2, theta_int, sini, X, Y
-        )
-        V = model.evaluate_circular_velocity(theta, X_disk, Y_disk)
-    else:
-        V = model(theta, plane, X, Y)
-
-    # Plot
+    # plot
     fig, ax = plt.subplots(figsize=figsize)
     im = ax.pcolormesh(X, Y, V, shading='auto')
     cbar = plt.colorbar(im, ax=ax, label='km/s')
@@ -231,31 +212,8 @@ def plot_all_planes(
     for idx, plane in enumerate(planes):
         ax = axes[idx]
 
-        # Evaluate model
-        if speed:
-            from kl_pipe.transformation import transform_to_disk_plane
-
-            x0 = model.get_param('x0', theta) if 'x0' in model._param_indices else 0.0
-            y0 = model.get_param('y0', theta) if 'y0' in model._param_indices else 0.0
-            g1 = model.get_param('g1', theta) if 'g1' in model._param_indices else 0.0
-            g2 = model.get_param('g2', theta) if 'g2' in model._param_indices else 0.0
-            theta_int = (
-                model.get_param('theta_int', theta)
-                if 'theta_int' in model._param_indices
-                else 0.0
-            )
-            sini = (
-                model.get_param('sini', theta)
-                if 'sini' in model._param_indices
-                else 0.0
-            )
-
-            X_disk, Y_disk = transform_to_disk_plane(
-                plane, x0, y0, g1, g2, theta_int, sini, X, Y
-            )
-            V = model.evaluate_circular_velocity(theta, X_disk, Y_disk)
-        else:
-            V = model(theta, plane, X, Y)
+        # evaluate model
+        V = model(theta, plane, X, Y, return_speed=speed)
 
         im = ax.pcolormesh(X, Y, V, shading='auto')
         plt.colorbar(im, ax=ax, label='km/s')

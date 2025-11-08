@@ -34,39 +34,6 @@ class CenteredVelocityModel(VelocityModel):
     def name(self) -> str:
         return 'centered'
 
-    def __call__(
-        self,
-        theta: jnp.ndarray,
-        plane: str,
-        x: jnp.ndarray,
-        y: jnp.ndarray,
-        z: jnp.ndarray = None,
-    ) -> jnp.ndarray:
-        """
-        Evaluate intensity at coordinates in the specified plane.
-
-        NOTE: we have to override the parent method to eliminate the need for the
-        x0/y0 centroid transformation, since this model has no offsets.
-        """
-
-        # extract transformation parameters
-        g1 = self.get_param('g1', theta)
-        g2 = self.get_param('g2', theta)
-        theta_int = self.get_param('theta_int', theta)
-        sini = self.get_param('sini', theta)
-
-        # hard-coded, as no offsets
-        x0 = 0.0
-        y0 = 0.0
-
-        # transform to disk plane
-        x_disk, y_disk = transform_to_disk_plane(
-            x, y, plane, x0, y0, g1, g2, theta_int, sini
-        )
-
-        # evaluate in disk plane
-        return self.evaluate_in_disk_plane(theta, x_disk, y_disk, z)
-
     def evaluate_circular_velocity(
         self,
         theta: jnp.ndarray,

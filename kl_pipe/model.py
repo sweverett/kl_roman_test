@@ -3,9 +3,11 @@ import jax.numpy as jnp
 import jax
 
 from abc import abstractmethod, ABC
-from typing import Tuple, Set, Dict
+from typing import Tuple, Set, Any
 
 from kl_pipe.transformation import transform_to_disk_plane
+from kl_pipe.parameters import ImagePars
+from kl_pipe.utils import build_map_grid_from_image_pars
 
 
 class Model(ABC):
@@ -48,6 +50,92 @@ class Model(ABC):
     def name(self) -> str:
         pass
 
+    def render(
+        self,
+        theta: jnp.ndarray,
+        data_type: str,
+        data_pars: Any,
+        plane: str = 'obs',
+        **kwargs
+    ) -> jnp.ndarray:
+        """
+        High-level rendering interface for different data products.
+        
+        Parameters
+        ----------
+        theta : jnp.ndarray
+            Parameter array.
+        data_type : str
+            Type of data product to render. Options: 'image', 'cube', 'slit', 'grism'.
+        data_pars : object
+            Parameters defining the data product (e.g., ImagePars for 'image').
+        plane : str
+            Coordinate plane for evaluation. Default is 'obs'.
+        **kwargs
+            Additional arguments passed to specific render methods.
+            
+        Returns
+        -------
+        jnp.ndarray
+            Rendered data product.
+        """
+
+        if data_type == 'image':
+            if not isinstance(data_pars, ImagePars):
+                raise TypeError("data_pars must be ImagePars for data_type='image'")
+            return self.render_image(theta, data_pars, plane=plane, **kwargs)
+
+        elif data_type == 'cube':
+            raise NotImplementedError("Cube rendering not yet implemented")
+
+        elif data_type == 'slit':
+            raise NotImplementedError("Slit rendering not yet implemented")
+
+        elif data_type == 'grism':
+            raise NotImplementedError("Grism rendering not yet implemented")
+
+        else:
+            raise ValueError(
+                f"Unknown data_type '{data_type}'. "
+                f"Must be one of: 'image', 'cube', 'slit', 'grism'"
+            )
+
+    def render_image(
+        self,
+        theta: jnp.ndarray,
+        image_pars: ImagePars,
+        plane: str = 'obs',
+        **kwargs
+    ) -> jnp.ndarray:
+        """
+        Render model as a 2D image.
+
+        NOTE: Some model subclasses may override this method due to special rendering 
+        needs.
+        
+        Parameters
+        ----------
+        theta : jnp.ndarray
+            Parameter array.
+        image_pars : ImagePars
+            Image parameters defining grid, pixel scale, etc.
+        plane : str
+            Coordinate plane for evaluation. Default is 'obs'.
+        **kwargs
+            Additional model-specific arguments.
+            
+        Returns
+        -------
+        jnp.ndarray
+            2D image array with shape matching image_pars.shape.
+        """
+
+        # build coordinate grids from ImagePars
+        X, Y = build_map_grid_from_image_pars(image_pars)
+        
+        # evaluate model on grid
+        return self(theta, plane, X, Y)
+
     @abstractmethod
     def __call__(
         self,
@@ -79,44 +167,65 @@ class VelocityModel(Model):
         x: jnp.ndarray,
         y: jnp.ndarray,
         z: jnp.ndarray = None,
+        return_speed: bool = False,
     ) -> jnp.ndarray:
         """
         Evaluate line-of-sight velocity at coordinates in the specified plane.
 
         The velocity is computed as:
         1. Transform coordinates to disk plane
-        2. Evaluate 3D velocity field in disk plane
-        3. Project to line-of-sight based on viewing geometry
-        4. Add systemic velocity
+        2. Evaluate circular velocity (speed) in disk plane
+        3. If return_speed=False: Project to line-of-sight based on viewing geometry
+        4. Add systemic velocity (only if return_speed=False)
+        
+        Parameters
+        ----------
+        theta : jnp.ndarray
+            Parameter array.
+        plane : str
+            Coordinate plane for input coordinates.
+        x, y : jnp.ndarray
+            Coordinate arrays.
+        z : jnp.ndarray, optional
+            Z-coordinate array for 3D evaluation.
+        return_speed : bool
+            If True, return circular speed (scalar). If False, return line-of-sight
+            velocity (projected). Default is False.
+            
+        Returns
+        -------
+        jnp.ndarray
+            Velocity map (line-of-sight if return_speed=False, circular speed if True).
         """
 
         # extract transformation parameters
-        x0 = self.get_param('vel_x0', theta)
-        y0 = self.get_param('vel_y0', theta)
         g1 = self.get_param('g1', theta)
         g2 = self.get_param('g2', theta)
         theta_int = self.get_param('theta_int', theta)
         sini = self.get_param('sini', theta)
 
-        # plus extras
-        v0 = self.get_param('v0', theta)
+        # centroid offsets are not present in all models, so check first
+        x0 = self.get_param('vel_x0', theta) if 'vel_x0' in self._param_indices else 0.0
+        y0 = self.get_param('vel_y0', theta) if 'vel_y0' in self._param_indices else 0.0
 
-        # Transform to disk plane
+        # transform to disk plane
         x_disk, y_disk = transform_to_disk_plane(
             x, y, plane, x0, y0, g1, g2, theta_int, sini
         )
 
-        # evaluate circular velocity (speed) in disk plane
+        # always evaluate circular velocity (speed) in disk plane first
         v_circ = self.evaluate_circular_velocity(theta, x_disk, y_disk, z)
 
-        # project to line-of-sight
-        # For circular rotation: v_los = v_circ * sin(i) * cos(phi)
-        # where phi is azimuthal angle in disk plane
-        phi = jnp.arctan2(y_disk, x_disk)
-        v_los = sini * jnp.cos(phi) * v_circ
+        # return speed or project to line-of-sight
+        if return_speed:
+            return v_circ
+        else:
+            # project to line-of-sight velocity
+            v0 = self.get_param('v0', theta)
+            phi = jnp.arctan2(y_disk, x_disk)
+            v_los = sini * jnp.cos(phi) * v_circ
 
-        # finally, add systemic velocity
-        return v0 + v_los
+            return v0 + v_los
 
     @abstractmethod
     def evaluate_circular_velocity(
@@ -145,6 +254,40 @@ class VelocityModel(Model):
         raise NotImplementedError(
             "Subclasses must implement evaluate_circular_velocity method."
         )
+
+    def render_image(
+        self,
+        theta: jnp.ndarray,
+        image_pars: ImagePars,
+        plane: str = 'obs',
+        return_speed: bool = False,
+    ) -> jnp.ndarray:
+        """
+        Render velocity model as a 2D image.
+        
+        Parameters
+        ----------
+        theta : jnp.ndarray
+            Parameter array.
+        image_pars : ImagePars
+            Image parameters defining the grid.
+        plane : str
+            Coordinate plane for evaluation. Default is 'obs'.
+        return_speed : bool
+            If True, return speed map. If False, return line-of-sight velocity map.
+            Default is False.
+            
+        Returns
+        -------
+        jnp.ndarray
+            2D velocity or speed map with shape image_pars.shape.
+        """
+
+        # build coordinate grids from ImagePars
+        X, Y = build_map_grid_from_image_pars(image_pars)
+        
+        # evaluate model on grid
+        return self(theta, plane, X, Y, return_speed=return_speed)
 
 
 class IntensityModel(Model):
